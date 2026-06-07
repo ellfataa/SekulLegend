@@ -6,36 +6,77 @@ use App\Models\UserModel;
 use App\Models\KelasModel;
 use App\Models\MateriModel;
 use App\Models\DiskusiModel;
-use CodeIgniter\HTTP\RedirectResponse;
-use CodeIgniter\Controller;
-use CodeIgniter\Database\BaseConnection;
+use CodeIgniter\Exceptions\PageNotFoundException;
 
 class Admin extends BaseController
 {
-    protected $userModel;
-    protected $kelasModel;
-    protected $materiModel;
-    protected $diskusiModel;
-    protected $db;
+    protected UserModel $userModel;
+    protected KelasModel $kelasModel;
+    protected MateriModel $materiModel;
+    protected DiskusiModel $diskusiModel;
+
+    private string $materiUploadPath = FCPATH . 'uploads/materi';
 
     public function __construct()
     {
-        $this->userModel = new UserModel();
-        $this->kelasModel = new KelasModel();
-        $this->materiModel = new MateriModel();
+        $this->userModel    = new UserModel();
+        $this->kelasModel   = new KelasModel();
+        $this->materiModel  = new MateriModel();
         $this->diskusiModel = new DiskusiModel();
-        $this->db = \Config\Database::connect();
     }
 
-    // Akses utama: /admin
+    private function ensureAdmin()
+    {
+        if (! session()->get('logged_in') || session()->get('role') !== 'admin') {
+            return redirect()
+                ->to('/login')
+                ->with('error', 'Silakan login sebagai admin terlebih dahulu.');
+        }
+
+        return null;
+    }
+
+    private function ensureUploadDirectory(): void
+    {
+        if (! is_dir($this->materiUploadPath)) {
+            mkdir($this->materiUploadPath, 0775, true);
+        }
+    }
+
+    private function deleteMateriFile(?string $fileName): void
+    {
+        if (! $fileName) {
+            return;
+        }
+
+        $filePath = $this->materiUploadPath . '/' . $fileName;
+
+        if (is_file($filePath)) {
+            unlink($filePath);
+        }
+    }
+
+    private function generateKodeKelas(): string
+    {
+        do {
+            $kode = strtoupper(bin2hex(random_bytes(3)));
+            $exists = $this->kelasModel->where('kode_kelas', $kode)->first();
+        } while ($exists);
+
+        return $kode;
+    }
+
     public function index()
     {
-        return $this->dashboard(); // Redirect ke method dashboard
+        return redirect()->to('/admin/dashboard');
     }
 
-    // Akses langsung ke dashboard: /admin/dashboard
     public function dashboard()
     {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
         $data = [
             'total_siswa'   => $this->userModel->where('role', 'siswa')->countAllResults(),
             'total_guru'    => $this->userModel->where('role', 'guru')->countAllResults(),
@@ -47,243 +88,642 @@ class Admin extends BaseController
         return view('admin/dashboard', $data);
     }
 
+    // =========================
     // CRUD USER
+    // =========================
+
     public function manajemenUser()
     {
-        $userModel = new UserModel();
-        $data['users'] = $userModel->whereIn('role', ['guru', 'siswa'])->findAll();
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $data = [
+            'users' => $this->userModel
+                ->whereIn('role', ['guru', 'siswa'])
+                ->orderBy('id', 'DESC')
+                ->findAll(),
+        ];
 
         return view('admin/user/index', $data);
     }
 
     public function tambahUser()
     {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
         return view('admin/user/tambah');
     }
 
     public function simpanUser()
     {
-        $userModel = new UserModel();
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
 
-        $data = [
-            'nama' => $this->request->getPost('nama'),
-            'username' => $this->request->getPost('username'),
-            'password' => password_hash($this->request->getPost('password'), PASSWORD_DEFAULT),
-            'role' => $this->request->getPost('role'),
+        $rules = [
+            'nama' => [
+                'label' => 'Nama Lengkap',
+                'rules' => 'required|min_length[3]|max_length[100]',
+            ],
+            'username' => [
+                'label' => 'Username',
+                'rules' => 'required|min_length[3]|max_length[50]|alpha_numeric_punct|is_unique[users.username]',
+                'errors' => [
+                    'is_unique' => 'Username sudah digunakan. Silakan gunakan username lain.',
+                ],
+            ],
+            'password' => [
+                'label' => 'Password',
+                'rules' => 'required|min_length[6]',
+            ],
+            'role' => [
+                'label' => 'Role',
+                'rules' => 'required|in_list[guru,siswa]',
+            ],
         ];
 
-        $userModel->insert($data);
-        return redirect()->to('/admin/user')->with('success', 'User berhasil ditambahkan.');
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
+        $this->userModel->insert([
+            'nama'     => trim((string) $this->request->getPost('nama')),
+            'username' => trim((string) $this->request->getPost('username')),
+            'password' => password_hash((string) $this->request->getPost('password'), PASSWORD_DEFAULT),
+            'role'     => $this->request->getPost('role'),
+        ]);
+
+        return redirect()
+            ->to('/admin/user')
+            ->with('success', 'User berhasil ditambahkan.');
     }
 
     public function editUser($id)
     {
-        $userModel = new UserModel();
-        $data['user'] = $userModel->find($id);
-        return view('admin/user/edit', $data);
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $user = $this->userModel->find($id);
+
+        if (! $user || ! in_array($user['role'], ['guru', 'siswa'], true)) {
+            return redirect()
+                ->to('/admin/user')
+                ->with('error', 'User tidak ditemukan atau tidak dapat diedit.');
+        }
+
+        return view('admin/user/edit', [
+            'user' => $user,
+        ]);
     }
 
     public function updateUser($id)
     {
-        $userModel = new UserModel();
-
-        $data = [
-            'nama' => $this->request->getPost('nama'),
-            'username' => $this->request->getPost('username'),
-            'role' => $this->request->getPost('role'),
-        ];
-
-        if ($this->request->getPost('password')) {
-            $data['password'] = password_hash($this->request->getPost('password'), PASSWORD_DEFAULT);
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
         }
 
-        $userModel->update($id, $data);
-        return redirect()->to('/admin/user')->with('success', 'User berhasil diperbarui.');
+        $user = $this->userModel->find($id);
+
+        if (! $user || ! in_array($user['role'], ['guru', 'siswa'], true)) {
+            return redirect()
+                ->to('/admin/user')
+                ->with('error', 'User tidak ditemukan atau tidak dapat diperbarui.');
+        }
+
+        $rules = [
+            'nama' => [
+                'label' => 'Nama Lengkap',
+                'rules' => 'required|min_length[3]|max_length[100]',
+            ],
+            'username' => [
+                'label' => 'Username',
+                'rules' => "required|min_length[3]|max_length[50]|alpha_numeric_punct|is_unique[users.username,id,{$id}]",
+                'errors' => [
+                    'is_unique' => 'Username sudah digunakan. Silakan gunakan username lain.',
+                ],
+            ],
+            'password' => [
+                'label' => 'Password',
+                'rules' => 'permit_empty|min_length[6]',
+            ],
+            'role' => [
+                'label' => 'Role',
+                'rules' => 'required|in_list[guru,siswa]',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
+        $data = [
+            'nama'     => trim((string) $this->request->getPost('nama')),
+            'username' => trim((string) $this->request->getPost('username')),
+            'role'     => $this->request->getPost('role'),
+        ];
+
+        $password = (string) $this->request->getPost('password');
+
+        if ($password !== '') {
+            $data['password'] = password_hash($password, PASSWORD_DEFAULT);
+        }
+
+        $this->userModel->update($id, $data);
+
+        return redirect()
+            ->to('/admin/user')
+            ->with('success', 'User berhasil diperbarui.');
     }
 
     public function hapusUser($id)
     {
-        $userModel = new UserModel();
-        $userModel->delete($id);
-        return redirect()->to('/admin/user')->with('success', 'User berhasil dihapus.');
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $user = $this->userModel->find($id);
+
+        if (! $user || ! in_array($user['role'], ['guru', 'siswa'], true)) {
+            return redirect()
+                ->to('/admin/user')
+                ->with('error', 'User tidak ditemukan atau tidak dapat dihapus.');
+        }
+
+        $this->userModel->delete($id);
+
+        return redirect()
+            ->to('/admin/user')
+            ->with('success', 'User berhasil dihapus.');
     }
 
+    // =========================
     // CRUD KELAS
+    // =========================
+
     public function kelas()
     {
-        $kelasModel = new KelasModel();
-        $data['kelas'] = $kelasModel->findAll();
-        return view('admin/kelas/index', $data);
-    }
-
-    public function tambahKelas()
-    {
-        $data['guru'] = $this->userModel->where('role', 'guru')->findAll();
-        return view('admin/kelas/tambah', $data);
-    }
-
-
-    public function simpanKelas()
-    {
-        $kelasModel = new KelasModel();
-        $id_guru = $this->request->getPost('id_guru');
-
-        $kelasModel->insert([
-            'nama_kelas' => $this->request->getPost('nama_kelas'),
-            'kode_kelas' => $this->request->getPost('kode_kelas'),
-            'id_guru'    => $id_guru,
-        ]);
-
-        return redirect()->to('/admin/kelas')->with('success', 'Kelas berhasil ditambahkan.');
-    }
-
-    public function editKelas($id)
-    {
-        $kelasModel = new KelasModel();
-        $data['kelas'] = $kelasModel->find($id);
-        return view('admin/kelas/edit', $data);
-    }
-
-    public function updateKelas($id)
-    {
-        $kelasModel = new KelasModel();
-        $kelasModel->update($id, [
-            'nama_kelas' => $this->request->getPost('nama_kelas'),
-            'kode_kelas' => $this->request->getPost('kode_kelas'),
-        ]);
-
-        return redirect()->to('/admin/kelas')->with('success', 'Kelas berhasil diperbarui.');
-    }
-
-    public function hapusKelas($id)
-    {
-        $kelasModel = new KelasModel();
-        $kelasModel->delete($id);
-        return redirect()->to('/admin/kelas')->with('success', 'Kelas berhasil dihapus.');
-    }
-
-    // CRUD MATERI
-    public function materi()
-    {
-        $materiModel = new MateriModel();
-        $data['materi'] = $materiModel->findAll();
-        return view('admin/materi/index', $data);
-    }
-
-    public function tambahMateri()
-    {
-         $kelasModel = new KelasModel();
-        $data['kelas'] = $kelasModel->findAll();
-        return view('admin/materi/tambah', $data);
-    }
-
-    public function simpanMateri()
-    {
-        $file = $this->request->getFile('file');
-
-        if ($file && $file->isValid() && !$file->hasMoved()) {
-            $newName = $file->getRandomName();
-            $file->move('public/uploads/materi/', $newName);
-
-            $this->materiModel->insert([
-                'judul'     => $this->request->getPost('judul'),
-                'deskripsi' => $this->request->getPost('deskripsi'),
-                'file'      => $newName,
-                'id_kelas'  => $this->request->getPost('id_kelas'),
-            ]);
-
-            return redirect()->to('/admin/materi')->with('success', 'Materi berhasil ditambahkan.');
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
         }
 
-        return redirect()->back()->with('error', 'Gagal mengunggah file. Pastikan file valid.');
-    }
-
-    public function editMateri($id)
-    {
-        $materiModel = new MateriModel();
-        $data['materi'] = $materiModel->find($id);
-        return view('admin/materi/edit', $data);
-    }
-
-    public function updateMateri($id)
-    {
-        $materiModel = new MateriModel();
-
-        $judul = $this->request->getPost('judul');
-        $deskripsi = $this->request->getPost('deskripsi');
-
-        $file = $this->request->getFile('file');
-        $data = [
-            'judul' => $judul,
-            'deskripsi' => $deskripsi,
-        ];
-
-        if ($file && $file->isValid() && !$file->hasMoved()) {
-            // simpan file ke folder uploads
-            $newName = $file->getRandomName();
-            $file->move('public/uploads/materi/', $newName);
-            $data['file'] = $newName;
-
-            // hapus file lama jika ada
-            $lama = $materiModel->find($id)['file'];
-            if ($lama && file_exists('public/uploads/materi/' . $lama)) {
-                unlink('public/uploads/materi/' . $lama);
-            }
-        }
-
-        $materiModel->update($id, $data);
-
-        return redirect()->to('/admin/materi')->with('success', 'Materi berhasil diperbarui.');
-    }
-
-
-    public function hapusMateri($id)
-    {
-        $materiModel = new MateriModel();
-        $materiModel->delete($id);
-        return redirect()->to('/admin/materi')->with('success', 'Materi berhasil dihapus.');
-    }
-
-    // CRUD DISKUSI
-    public function diskusi()
-    {
-        $db = \Config\Database::connect();
-        $kelas = $db->table('kelas')
-            ->select('kelas.id, kelas.nama_kelas, COUNT(diskusi_kelas.id) as total_diskusi')
-            ->join('diskusi_kelas', 'diskusi_kelas.id_kelas = kelas.id', 'left')
-            ->groupBy('kelas.id')
-            ->get()->getResultArray();
-
-        return view('admin/diskusi/index', ['kelas' => $kelas]);
-    }
-
-    // Menampilkan komentar diskusi dari satu kelas
-    public function diskusiKelas($id_kelas)
-    {
-        $diskusiModel = new DiskusiModel();
-
-        $komentar = $diskusiModel
-            ->select('diskusi_kelas.*, users.nama as nama_user')
-            ->join('users', 'users.id = diskusi_kelas.id_user')
-            ->where('id_kelas', $id_kelas)
-            ->orderBy('created_at', 'DESC')
+        $kelas = $this->kelasModel
+            ->select('kelas.*, users.nama as nama_guru')
+            ->join('users', 'users.id = kelas.id_guru', 'left')
+            ->orderBy('kelas.id', 'DESC')
             ->findAll();
 
-        $kelas = $this->db->table('kelas')->where('id', $id_kelas)->get()->getRowArray();
-
-        return view('admin/diskusi/kelas', [
-            'komentar' => $komentar,
+        return view('admin/kelas/index', [
             'kelas' => $kelas,
         ]);
     }
 
-    // Hapus komentar
-    public function hapusDiskusi($id)
+    public function tambahKelas()
     {
-        $diskusiModel = new DiskusiModel();
-        $diskusiModel->delete($id);
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
 
-        return redirect()->back()->with('success', 'Komentar berhasil dihapus.');
+        $data = [
+            'guru' => $this->userModel
+                ->where('role', 'guru')
+                ->orderBy('nama', 'ASC')
+                ->findAll(),
+        ];
+
+        return view('admin/kelas/tambah', $data);
     }
 
+    public function simpanKelas()
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $rules = [
+            'nama_kelas' => [
+                'label' => 'Nama Kelas',
+                'rules' => 'required|min_length[3]|max_length[100]',
+            ],
+            'id_guru' => [
+                'label' => 'Guru',
+                'rules' => 'required|is_natural_no_zero',
+            ],
+            'kode_kelas' => [
+                'label' => 'Kode Kelas',
+                'rules' => 'permit_empty|max_length[20]|is_unique[kelas.kode_kelas]',
+                'errors' => [
+                    'is_unique' => 'Kode kelas sudah digunakan.',
+                ],
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
+        $idGuru = (int) $this->request->getPost('id_guru');
+        $guru = $this->userModel
+            ->where('id', $idGuru)
+            ->where('role', 'guru')
+            ->first();
+
+        if (! $guru) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Guru tidak valid.');
+        }
+
+        $kodeKelas = trim((string) $this->request->getPost('kode_kelas'));
+
+        $this->kelasModel->insert([
+            'nama_kelas' => trim((string) $this->request->getPost('nama_kelas')),
+            'kode_kelas' => $kodeKelas !== '' ? strtoupper($kodeKelas) : $this->generateKodeKelas(),
+            'id_guru'    => $idGuru,
+        ]);
+
+        return redirect()
+            ->to('/admin/kelas')
+            ->with('success', 'Kelas berhasil ditambahkan.');
+    }
+
+    public function editKelas($id)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $kelas = $this->kelasModel->find($id);
+
+        if (! $kelas) {
+            return redirect()
+                ->to('/admin/kelas')
+                ->with('error', 'Kelas tidak ditemukan.');
+        }
+
+        return view('admin/kelas/edit', [
+            'kelas' => $kelas,
+            'guru'  => $this->userModel->where('role', 'guru')->orderBy('nama', 'ASC')->findAll(),
+        ]);
+    }
+
+    public function updateKelas($id)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $kelas = $this->kelasModel->find($id);
+
+        if (! $kelas) {
+            return redirect()
+                ->to('/admin/kelas')
+                ->with('error', 'Kelas tidak ditemukan.');
+        }
+
+        $rules = [
+            'nama_kelas' => [
+                'label' => 'Nama Kelas',
+                'rules' => 'required|min_length[3]|max_length[100]',
+            ],
+            'kode_kelas' => [
+                'label' => 'Kode Kelas',
+                'rules' => "required|max_length[20]|is_unique[kelas.kode_kelas,id,{$id}]",
+                'errors' => [
+                    'is_unique' => 'Kode kelas sudah digunakan.',
+                ],
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
+        $this->kelasModel->update($id, [
+            'nama_kelas' => trim((string) $this->request->getPost('nama_kelas')),
+            'kode_kelas' => strtoupper(trim((string) $this->request->getPost('kode_kelas'))),
+        ]);
+
+        return redirect()
+            ->to('/admin/kelas')
+            ->with('success', 'Kelas berhasil diperbarui.');
+    }
+
+    public function hapusKelas($id)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $kelas = $this->kelasModel->find($id);
+
+        if (! $kelas) {
+            return redirect()
+                ->to('/admin/kelas')
+                ->with('error', 'Kelas tidak ditemukan.');
+        }
+
+        $materiList = $this->materiModel
+            ->where('id_kelas', $id)
+            ->findAll();
+
+        foreach ($materiList as $materi) {
+            $this->deleteMateriFile($materi['file'] ?? null);
+        }
+
+        $this->materiModel->where('id_kelas', $id)->delete();
+        $this->diskusiModel->where('id_kelas', $id)->delete();
+        $this->kelasModel->delete($id);
+
+        return redirect()
+            ->to('/admin/kelas')
+            ->with('success', 'Kelas berhasil dihapus.');
+    }
+
+    // =========================
+    // CRUD MATERI
+    // =========================
+
+    public function materi()
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $materi = $this->materiModel
+            ->select('materi.*, kelas.nama_kelas')
+            ->join('kelas', 'kelas.id = materi.id_kelas', 'left')
+            ->orderBy('materi.id', 'DESC')
+            ->findAll();
+
+        return view('admin/materi/index', [
+            'materi' => $materi,
+        ]);
+    }
+
+    public function tambahMateri()
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        return view('admin/materi/tambah', [
+            'kelas' => $this->kelasModel->orderBy('nama_kelas', 'ASC')->findAll(),
+        ]);
+    }
+
+    public function simpanMateri()
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $rules = [
+            'judul' => [
+                'label' => 'Judul Materi',
+                'rules' => 'required|min_length[3]|max_length[150]',
+            ],
+            'deskripsi' => [
+                'label' => 'Deskripsi Materi',
+                'rules' => 'permit_empty|max_length[1000]',
+            ],
+            'id_kelas' => [
+                'label' => 'Kelas',
+                'rules' => 'required|is_natural_no_zero',
+            ],
+            'file' => [
+                'label' => 'File Materi',
+                'rules' => 'permit_empty|max_size[file,10240]|ext_in[file,pdf,doc,docx,ppt,pptx,xls,xlsx]',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
+        $idKelas = (int) $this->request->getPost('id_kelas');
+
+        if (! $this->kelasModel->find($idKelas)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Kelas tidak ditemukan.');
+        }
+
+        $this->ensureUploadDirectory();
+
+        $file = $this->request->getFile('file');
+        $fileName = null;
+
+        if ($file && $file->isValid() && ! $file->hasMoved()) {
+            $fileName = $file->getRandomName();
+            $file->move($this->materiUploadPath, $fileName);
+        }
+
+        $this->materiModel->insert([
+            'judul'     => trim((string) $this->request->getPost('judul')),
+            'deskripsi' => trim((string) $this->request->getPost('deskripsi')),
+            'file'      => $fileName,
+            'id_kelas'  => $idKelas,
+        ]);
+
+        return redirect()
+            ->to('/admin/materi')
+            ->with('success', 'Materi berhasil ditambahkan.');
+    }
+
+    public function editMateri($id)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $materi = $this->materiModel->find($id);
+
+        if (! $materi) {
+            return redirect()
+                ->to('/admin/materi')
+                ->with('error', 'Materi tidak ditemukan.');
+        }
+
+        return view('admin/materi/edit', [
+            'materi' => $materi,
+            'kelas'  => $this->kelasModel->orderBy('nama_kelas', 'ASC')->findAll(),
+        ]);
+    }
+
+    public function updateMateri($id)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $materi = $this->materiModel->find($id);
+
+        if (! $materi) {
+            return redirect()
+                ->to('/admin/materi')
+                ->with('error', 'Materi tidak ditemukan.');
+        }
+
+        $rules = [
+            'judul' => [
+                'label' => 'Judul Materi',
+                'rules' => 'required|min_length[3]|max_length[150]',
+            ],
+            'deskripsi' => [
+                'label' => 'Deskripsi Materi',
+                'rules' => 'permit_empty|max_length[1000]',
+            ],
+            'id_kelas' => [
+                'label' => 'Kelas',
+                'rules' => 'required|is_natural_no_zero',
+            ],
+            'file' => [
+                'label' => 'File Materi',
+                'rules' => 'permit_empty|max_size[file,10240]|ext_in[file,pdf,doc,docx,ppt,pptx,xls,xlsx]',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
+        $data = [
+            'judul'     => trim((string) $this->request->getPost('judul')),
+            'deskripsi' => trim((string) $this->request->getPost('deskripsi')),
+            'id_kelas'  => (int) $this->request->getPost('id_kelas'),
+        ];
+
+        $file = $this->request->getFile('file');
+
+        if ($file && $file->isValid() && ! $file->hasMoved()) {
+            $this->ensureUploadDirectory();
+
+            $newName = $file->getRandomName();
+            $file->move($this->materiUploadPath, $newName);
+
+            $this->deleteMateriFile($materi['file'] ?? null);
+
+            $data['file'] = $newName;
+        }
+
+        $this->materiModel->update($id, $data);
+
+        return redirect()
+            ->to('/admin/materi')
+            ->with('success', 'Materi berhasil diperbarui.');
+    }
+
+    public function hapusMateri($id)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $materi = $this->materiModel->find($id);
+
+        if (! $materi) {
+            return redirect()
+                ->to('/admin/materi')
+                ->with('error', 'Materi tidak ditemukan.');
+        }
+
+        $this->deleteMateriFile($materi['file'] ?? null);
+        $this->materiModel->delete($id);
+
+        return redirect()
+            ->to('/admin/materi')
+            ->with('success', 'Materi berhasil dihapus.');
+    }
+
+    // =========================
+    // DISKUSI
+    // =========================
+
+    public function diskusi()
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $kelas = $this->kelasModel
+            ->select('kelas.id, kelas.nama_kelas, COUNT(diskusi_kelas.id) as total_diskusi')
+            ->join('diskusi_kelas', 'diskusi_kelas.id_kelas = kelas.id', 'left')
+            ->groupBy('kelas.id, kelas.nama_kelas')
+            ->orderBy('kelas.id', 'DESC')
+            ->findAll();
+
+        return view('admin/diskusi/index', [
+            'kelas' => $kelas,
+        ]);
+    }
+
+    public function diskusiKelas($idKelas)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $kelas = $this->kelasModel->find($idKelas);
+
+        if (! $kelas) {
+            throw PageNotFoundException::forPageNotFound('Kelas tidak ditemukan.');
+        }
+
+        $komentar = $this->diskusiModel
+            ->select('diskusi_kelas.*, users.nama as nama_user')
+            ->join('users', 'users.id = diskusi_kelas.id_user', 'left')
+            ->where('diskusi_kelas.id_kelas', $idKelas)
+            ->orderBy('diskusi_kelas.created_at', 'DESC')
+            ->findAll();
+
+        return view('admin/diskusi/kelas', [
+            'komentar' => $komentar,
+            'kelas'    => $kelas,
+        ]);
+    }
+
+    public function hapusDiskusi($id)
+    {
+        if ($redirect = $this->ensureAdmin()) {
+            return $redirect;
+        }
+
+        $komentar = $this->diskusiModel->find($id);
+
+        if (! $komentar) {
+            return redirect()
+                ->back()
+                ->with('error', 'Komentar tidak ditemukan.');
+        }
+
+        $this->diskusiModel->delete($id);
+
+        return redirect()
+            ->back()
+            ->with('success', 'Komentar berhasil dihapus.');
+    }
 }

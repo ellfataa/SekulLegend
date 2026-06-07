@@ -1,187 +1,368 @@
 <?php
-session();
-$nama = session()->get('nama');
-$email = session()->get('email');
+$nama = session()->get('nama') ?? 'Admin';
+$kelas = isset($kelas) && is_array($kelas) ? $kelas : [];
+$inisial = strtoupper(mb_substr($nama, 0, 1));
 ?>
 
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daftar Kelas - SekulLegend</title>
-    <!-- Tailwind CSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Google -->
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Poppins', 'sans-serif'],
-                    },
-                    colors: {
-                        burlap: {
-                            50: '#f9f7f4',
-                            100: '#f3efe8',
-                            200: '#e6dfd1',
-                            300: '#d8caae',
-                            400: '#c7b28a',
-                            500: '#b79e6f',
-                            600: '#a58a5c',
-                            700: '#8a724d',
-                            800: '#735d42',
-                            900: '#5f4d38',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-</head>
-<body class="bg-burlap-50 font-sans min-h-screen">
-    <!-- Gradient Background -->
-    <div class="fixed inset-0 bg-gradient-to-br from-amber-50 to-stone-200 -z-10"></div>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Navigation -->
-    <nav class="bg-white shadow-md">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0 flex items-center">
-                        <h1 class="text-2xl font-bold text-stone-800">Sekul<span class="text-amber-700">Legend</span></h1>
-                    </div>
-                </div>
-                <div class="flex items-center">
-                    <div class="hidden md:ml-6 md:flex md:items-center md:space-x-4">
-                        <a href="<?= base_url('admin/dashboard') ?>" class="px-3 py-2 rounded-md text-sm font-medium text-stone-600 hover:text-amber-700 hover:bg-amber-50">Dashboard</a>
-                        <a href="<?= base_url('admin/user') ?>" class="px-3 py-2 rounded-md text-sm font-medium text-stone-600 hover:text-amber-700 hover:bg-amber-50">User</a>
-                        <a href="<?= base_url('admin/kelas') ?>" class="px-3 py-2 rounded-md text-sm font-medium text-amber-700 bg-amber-50">Kelas</a>
-                        <a href="<?= base_url('admin/materi') ?>" class="px-3 py-2 rounded-md text-sm font-medium text-stone-600 hover:text-amber-700 hover:bg-amber-50">Materi</a>
-                        <a href="<?= base_url('admin/diskusi') ?>" class="px-3 py-2 rounded-md text-sm font-medium text-stone-600 hover:text-amber-700 hover:bg-amber-50">Diskusi</a>
-                    </div>
-                    <div class="ml-4 flex items-center md:ml-6">
-                        <div class="relative">
-                            <button onclick="toggleDropdown()" class="flex items-center gap-2 text-sm">
-                                <div class="w-8 h-8 bg-amber-100 text-amber-700 font-semibold flex items-center justify-center rounded-full">
-                                    <?= substr($nama, 0, 1) ?>
-                                </div>
-                                <span class="hidden md:inline"><?= esc($nama) ?></span>
-                                <svg class="w-5 h-5 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path d="M19 9l-7 7-7-7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                            </button>
-                            <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50">
-                                <a href="<?= base_url('logout') ?>" class="block px-4 py-2 text-sm text-red-600 hover:bg-red-50">Logout</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+  <title>Manajemen Kelas - SekulLegend</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet"
+  >
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Poppins', 'sans-serif'],
+          },
+          colors: {
+            burlap: {
+              50: '#f9f7f4',
+              100: '#f3efe8',
+              200: '#e6dfd1',
+              300: '#d8caae',
+              400: '#c7b28a',
+              500: '#b79e6f',
+              600: '#a58a5c',
+              700: '#8a724d',
+              800: '#735d42',
+              900: '#5f4d38',
+            },
+          },
+        },
+      },
+    };
+  </script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-stone-200 font-sans text-stone-800">
+  <div class="flex min-h-screen flex-col">
+
+    <!-- Navbar -->
+    <header class="sticky top-0 z-40 border-b border-stone-200 bg-white/90 shadow-sm backdrop-blur">
+      <nav class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="flex h-16 items-center justify-between">
+          <a href="<?= base_url('admin/dashboard') ?>" class="text-xl font-bold tracking-tight text-stone-800 sm:text-2xl">
+            Sekul<span class="text-amber-700">Legend</span>
+          </a>
+
+          <div class="hidden items-center gap-2 lg:flex">
+            <a href="<?= base_url('admin/dashboard') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              Dashboard
+            </a>
+
+            <a href="<?= base_url('admin/user') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              User
+            </a>
+
+            <a href="<?= base_url('admin/kelas') ?>" class="rounded-lg bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700">
+              Kelas
+            </a>
+
+            <a href="<?= base_url('admin/materi') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              Materi
+            </a>
+
+            <a href="<?= base_url('admin/diskusi') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              Diskusi
+            </a>
+          </div>
+
+          <div class="relative flex items-center gap-2">
+            <button
+              type="button"
+              id="mobileMenuButton"
+              class="inline-flex h-10 w-10 items-center justify-center rounded-lg text-stone-600 transition hover:bg-amber-50 hover:text-amber-700 lg:hidden"
+              aria-label="Buka menu navigasi"
+              aria-expanded="false"
+            >
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              id="userMenuButton"
+              class="flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-amber-50"
+              aria-label="Buka menu pengguna"
+              aria-expanded="false"
+            >
+              <span class="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-700">
+                <?= esc($inisial) ?>
+              </span>
+
+              <span class="hidden max-w-40 truncate text-sm font-medium text-stone-700 sm:inline">
+                <?= esc($nama) ?>
+              </span>
+
+              <svg class="h-5 w-5 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path d="M19 9l-7 7-7-7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+
+            <div
+              id="userDropdown"
+              class="absolute right-0 top-12 hidden w-48 overflow-hidden rounded-xl border border-stone-100 bg-white shadow-lg"
+            >
+              <a href="<?= base_url('logout') ?>" class="block px-4 py-3 text-sm font-medium text-red-600 transition hover:bg-red-50">
+                Logout
+              </a>
             </div>
+          </div>
         </div>
-    </nav>
+
+        <!-- Mobile Menu -->
+        <div id="mobileMenu" class="hidden border-t border-stone-100 py-3 lg:hidden">
+          <div class="flex flex-col gap-2">
+            <a href="<?= base_url('admin/dashboard') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              Dashboard
+            </a>
+
+            <a href="<?= base_url('admin/user') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              User
+            </a>
+
+            <a href="<?= base_url('admin/kelas') ?>" class="rounded-lg bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700">
+              Kelas
+            </a>
+
+            <a href="<?= base_url('admin/materi') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              Materi
+            </a>
+
+            <a href="<?= base_url('admin/diskusi') ?>" class="rounded-lg px-4 py-2 text-sm font-medium text-stone-600 transition hover:bg-amber-50 hover:text-amber-700">
+              Diskusi
+            </a>
+          </div>
+        </div>
+      </nav>
+    </header>
 
     <!-- Main Content -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <!-- Header Banner -->
-        <div class="bg-white rounded-xl shadow-md overflow-hidden mb-8">
-            <div class="md:flex">
-                <div class="p-8">
-                    <div class="uppercase tracking-wide text-sm text-amber-700 font-semibold">ADMIN AREA</div>
-                    <h1 class="mt-2 text-3xl font-bold text-stone-800">Manajemen Kelas</h1>
-                    <p class="mt-3 text-stone-600">Kelola seluruh kelas yang tersedia pada platform SekulLegend.</p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Daftar Kelas -->
-        <div class="bg-white rounded-xl shadow-md overflow-hidden">
-            <div class="px-6 py-4 border-b border-burlap-200 bg-burlap-50 flex justify-between items-center">
-                <h2 class="text-xl font-bold text-amber-700 flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                    </svg>
-                    Daftar Kelas
+    <main class="flex-1">
+      <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+
+        <!-- Header -->
+        <section class="mb-8 overflow-hidden rounded-2xl border border-amber-100 bg-white/90 p-6 shadow-xl backdrop-blur-sm sm:p-8">
+          <p class="text-sm font-semibold uppercase tracking-wide text-amber-700">
+            Admin Area
+          </p>
+
+          <h1 class="mt-3 text-2xl font-bold tracking-tight text-stone-800 sm:text-3xl lg:text-4xl">
+            Manajemen Kelas
+          </h1>
+
+          <p class="mt-4 max-w-2xl text-sm leading-6 text-stone-600 sm:text-base">
+            Kelola seluruh kelas yang tersedia pada platform SekulLegend.
+          </p>
+        </section>
+
+        <!-- Flash Message -->
+        <?php if (session()->getFlashdata('success')) : ?>
+          <div class="mb-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            <?= esc(session()->getFlashdata('success')) ?>
+          </div>
+        <?php endif; ?>
+
+        <?php if (session()->getFlashdata('error')) : ?>
+          <div class="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <?= esc(session()->getFlashdata('error')) ?>
+          </div>
+        <?php endif; ?>
+
+        <!-- Kelas List -->
+        <section class="overflow-hidden rounded-2xl border border-burlap-200 bg-white/90 shadow-md backdrop-blur-sm">
+          <div class="border-b border-burlap-200 bg-burlap-50 px-6 py-4">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="text-lg font-bold text-amber-700">
+                  Daftar Kelas
                 </h2>
-                <a href="<?= base_url('admin/kelas/tambah') ?>" class="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Tambah Kelas
-                </a>
+
+                <p class="mt-1 text-sm text-stone-500">
+                  Total kelas: <?= esc(count($kelas)) ?>
+                </p>
+              </div>
+
+              <a
+                href="<?= base_url('admin/kelas/tambah') ?>"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 sm:w-auto"
+              >
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m6-6H6" />
+                </svg>
+                Tambah Kelas
+              </a>
             </div>
-            <div class="p-6 overflow-x-auto">
-                <table class="w-full table-auto bg-white rounded">
-                    <thead>
-                        <tr class="bg-burlap-50 text-left">
-                            <th class="px-4 py-3 border-b-2 border-burlap-200 font-semibold text-stone-700">No</th>
-                            <th class="px-4 py-3 border-b-2 border-burlap-200 font-semibold text-stone-700">Nama Kelas</th>
-                            <th class="px-4 py-3 border-b-2 border-burlap-200 font-semibold text-stone-700">Kode Kelas</th>
-                            <th class="px-4 py-3 border-b-2 border-burlap-200 font-semibold text-stone-700">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($kelas as $index => $k): ?>
-                        <tr class="hover:bg-burlap-50">
-                            <td class="px-4 py-3 border-b border-burlap-100"><?= $index + 1 ?></td>
-                            <td class="px-4 py-3 border-b border-burlap-100"><?= esc($k['nama_kelas']) ?></td>
-                            <td class="px-4 py-3 border-b border-burlap-100 font-mono"><?= esc($k['kode_kelas']) ?></td>
-                            <td class="px-4 py-3 border-b border-burlap-100">
-                                <div class="flex items-center space-x-2">
-                                    <a href="<?= base_url('admin/kelas/edit/' . $k['id']) ?>" class="px-3 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                        Edit
-                                    </a>
-                                    <a href="<?= base_url('admin/kelas/hapus/' . $k['id']) ?>" onclick="return confirm('Apakah Anda yakin ingin menghapus kelas ini?')" class="px-3 py-1 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                        Hapus
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endforeach ?>
-                        
-                        <?php if (empty($kelas)): ?>
-                        <tr>
-                            <td colspan="4" class="px-4 py-6 text-center text-stone-500 italic">Belum ada data kelas yang tersedia</td>
-                        </tr>
-                        <?php endif ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+          </div>
+
+          <div class="p-6">
+            <?php if (empty($kelas)) : ?>
+              <div class="flex flex-col items-center justify-center py-12 text-center">
+                <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-burlap-100 text-burlap-600">
+                  <svg class="h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+
+                <p class="text-lg font-semibold text-stone-800">
+                  Belum ada data kelas
+                </p>
+
+                <p class="mt-2 text-sm text-stone-500">
+                  Tambahkan kelas baru untuk mulai mengelola pembelajaran.
+                </p>
+              </div>
+            <?php else : ?>
+              <div class="grid grid-cols-1 gap-4">
+                <?php foreach ($kelas as $index => $k) : ?>
+                  <article class="rounded-xl border border-burlap-200 bg-white p-5 shadow-sm transition hover:bg-burlap-50/40 hover:shadow-md">
+                    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div class="min-w-0">
+                        <div class="flex items-start gap-3">
+                          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-sm font-bold text-amber-700">
+                            <?= esc($index + 1) ?>
+                          </div>
+
+                          <div class="min-w-0">
+                            <h3 class="truncate text-lg font-bold text-stone-800">
+                              <?= esc($k['nama_kelas'] ?? '-') ?>
+                            </h3>
+
+                            <div class="mt-2 flex flex-col gap-2 text-sm text-stone-600 sm:flex-row sm:flex-wrap sm:items-center">
+                              <span>
+                                <span class="font-medium text-stone-700">Kode:</span>
+                                <span class="font-mono"><?= esc($k['kode_kelas'] ?? '-') ?></span>
+                              </span>
+
+                              <?php if (! empty($k['nama_guru'])) : ?>
+                                <span class="hidden text-stone-300 sm:inline">•</span>
+                                <span>
+                                  <span class="font-medium text-stone-700">Guru:</span>
+                                  <?= esc($k['nama_guru']) ?>
+                                </span>
+                              <?php endif; ?>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="flex flex-col gap-2 sm:flex-row lg:justify-end">
+                        <a
+                          href="<?= base_url('admin/kelas/edit/' . ($k['id'] ?? 0)) ?>"
+                          class="inline-flex w-full items-center justify-center rounded-lg bg-blue-100 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-200 sm:w-auto"
+                        >
+                          Edit
+                        </a>
+
+                        <a
+                          href="<?= base_url('admin/kelas/hapus/' . ($k['id'] ?? 0)) ?>"
+                          onclick="return confirm('Yakin ingin menghapus kelas ini? Semua materi dan diskusi terkait juga dapat ikut terhapus.')"
+                          class="inline-flex w-full items-center justify-center rounded-lg bg-red-100 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-200 sm:w-auto"
+                        >
+                          Hapus
+                        </a>
+                      </div>
+                    </div>
+                  </article>
+                <?php endforeach; ?>
+              </div>
+            <?php endif; ?>
+          </div>
+        </section>
+      </div>
+    </main>
 
     <!-- Footer -->
-    <footer class="bg-white mt-8 border-t border-stone-200">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div class="md:flex md:items-center md:justify-between">
-                <div class="flex justify-center md:justify-start">
-                    <h1 class="text-xl font-bold text-stone-800">Sekul<span class="text-amber-700">Legend</span></h1>
-                </div>
-                <div class="mt-4 md:mt-0">
-                    <p class="text-center md:text-right text-sm text-stone-500">&copy; 2023 SekulLegend. All rights reserved.</p>
-                </div>
-            </div>
-        </div>
-    </footer>
+    <footer class="mt-10 border-t border-stone-200 bg-white/90">
+      <div class="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-4 py-6 sm:px-6 md:flex-row lg:px-8">
+        <h2 class="text-lg font-bold text-stone-800">
+          Sekul<span class="text-amber-700">Legend</span>
+        </h2>
 
-    <script>
-        function toggleDropdown() {
-            document.getElementById('userDropdown').classList.toggle('hidden');
-        }
-        
-        // Tutup dropdown jika klik di luar
-        window.addEventListener('click', function(e) {
-            if (!e.target.closest('button') && !document.getElementById('userDropdown').classList.contains('hidden')) {
-                document.getElementById('userDropdown').classList.add('hidden');
-            }
-        });
-    </script>
+        <p class="text-center text-sm text-stone-500 md:text-right">
+          &copy; 2023 SekulLegend. All rights reserved.
+        </p>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const userMenuButton = document.getElementById('userMenuButton');
+    const userDropdown = document.getElementById('userDropdown');
+    const mobileMenuButton = document.getElementById('mobileMenuButton');
+    const mobileMenu = document.getElementById('mobileMenu');
+
+    function closeUserDropdown() {
+      userDropdown?.classList.add('hidden');
+      userMenuButton?.setAttribute('aria-expanded', 'false');
+    }
+
+    function closeMobileMenu() {
+      mobileMenu?.classList.add('hidden');
+      mobileMenuButton?.setAttribute('aria-expanded', 'false');
+    }
+
+    userMenuButton?.addEventListener('click', function (event) {
+      event.stopPropagation();
+
+      const isHidden = userDropdown.classList.toggle('hidden');
+      userMenuButton.setAttribute('aria-expanded', String(!isHidden));
+
+      closeMobileMenu();
+    });
+
+    mobileMenuButton?.addEventListener('click', function (event) {
+      event.stopPropagation();
+
+      const isHidden = mobileMenu.classList.toggle('hidden');
+      mobileMenuButton.setAttribute('aria-expanded', String(!isHidden));
+
+      closeUserDropdown();
+    });
+
+    document.addEventListener('click', function (event) {
+      const clickedOutsideUserMenu =
+        userDropdown &&
+        userMenuButton &&
+        !userDropdown.contains(event.target) &&
+        !userMenuButton.contains(event.target);
+
+      const clickedOutsideMobileMenu =
+        mobileMenu &&
+        mobileMenuButton &&
+        !mobileMenu.contains(event.target) &&
+        !mobileMenuButton.contains(event.target);
+
+      if (clickedOutsideUserMenu) {
+        closeUserDropdown();
+      }
+
+      if (clickedOutsideMobileMenu) {
+        closeMobileMenu();
+      }
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeUserDropdown();
+        closeMobileMenu();
+      }
+    });
+  </script>
 </body>
 </html>
