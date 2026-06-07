@@ -315,6 +315,7 @@ class Kelas extends BaseController
             ->orderBy('created_at', 'DESC')
             ->findAll();
 
+            
         $userMap = [];
 
         foreach ($diskusi as $d) {
