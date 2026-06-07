@@ -6,6 +6,15 @@ use CodeIgniter\Model;
 
 class DiskusiModel extends Model
 {
-    protected $table = 'diskusi_kelas';
-    protected $allowedFields = ['id_kelas', 'id_user', 'pesan', 'created_at'];
+    protected $table            = 'diskusi_kelas';
+    protected $primaryKey       = 'id';
+    protected $useAutoIncrement = true;
+    protected $returnType       = 'array';
+
+    protected $allowedFields = [
+        'id_kelas',
+        'id_user',
+        'pesan',
+        'created_at',
+    ];
 }

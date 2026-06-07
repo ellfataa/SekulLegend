@@ -2,97 +2,194 @@
 
 namespace App\Controllers;
 
-use App\Models\MateriModel;
 use App\Models\KelasModel;
+use App\Models\MateriModel;
 use CodeIgniter\Exceptions\PageNotFoundException;
 
 class Materi extends BaseController
 {
-    public function index($id_kelas)
+    private string $materiUploadPath = FCPATH . 'uploads/materi';
+
+    private function ensureGuru()
     {
-        $kelasModel = new KelasModel();
-        $materiModel = new MateriModel();
-
-        $kelas = $kelasModel->find($id_kelas);
-
-        if (!$kelas) {
-            throw PageNotFoundException::forPageNotFound("Kelas tidak ditemukan.");
+        if (! session()->get('logged_in') || session()->get('role') !== 'guru') {
+            return redirect()
+                ->to('/login')
+                ->with('error', 'Silakan login sebagai guru terlebih dahulu.');
         }
 
-        $materi = $materiModel->where('id_kelas', $id_kelas)->findAll();
+        return null;
+    }
+
+    private function getOwnedKelas(int $idKelas): ?array
+    {
+        $kelasModel = new KelasModel();
+
+        return $kelasModel
+            ->where('id', $idKelas)
+            ->where('id_guru', session()->get('id'))
+            ->first();
+    }
+
+    private function getOwnedMateri(int $idMateri): ?array
+    {
+        $materiModel = new MateriModel();
+
+        $materi = $materiModel->find($idMateri);
+
+        if (! $materi) {
+            return null;
+        }
+
+        $kelas = $this->getOwnedKelas((int) $materi['id_kelas']);
+
+        if (! $kelas) {
+            return null;
+        }
+
+        return $materi;
+    }
+
+    private function ensureUploadDirectory(): void
+    {
+        if (! is_dir($this->materiUploadPath)) {
+            mkdir($this->materiUploadPath, 0775, true);
+        }
+    }
+
+    public function index($idKelas)
+    {
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
+
+        $kelas = $this->getOwnedKelas((int) $idKelas);
+
+        if (! $kelas) {
+            throw PageNotFoundException::forPageNotFound('Kelas tidak ditemukan.');
+        }
+
+        $materiModel = new MateriModel();
+
+        $materi = $materiModel
+            ->where('id_kelas', $idKelas)
+            ->orderBy('id', 'DESC')
+            ->findAll();
 
         return view('materi/index', [
-            'kelas' => $kelas,
-            'materi' => $materi
+            'kelas'  => $kelas,
+            'materi' => $materi,
         ]);
     }
 
     public function edit($id)
     {
-        $materiModel = new MateriModel();
-        $materi = $materiModel->find($id);
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
 
-        if (!$materi) {
+        $materi = $this->getOwnedMateri((int) $id);
+
+        if (! $materi) {
             throw PageNotFoundException::forPageNotFound('Materi tidak ditemukan.');
         }
 
-        return view('materi/edit', ['materi' => $materi]);
+        return view('materi/edit', [
+            'materi' => $materi,
+        ]);
     }
 
     public function update($id)
     {
-        $materiModel = new MateriModel();
-        $materiLama = $materiModel->find($id);
-
-        if (!$materiLama) {
-            return redirect()->back()->with('error', 'Materi tidak ditemukan.');
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
         }
 
-        $judul = $this->request->getPost('judul');
-        $deskripsi = $this->request->getPost('deskripsi');
+        $materi = $this->getOwnedMateri((int) $id);
 
-        if (!$judul || !$deskripsi) {
-            return redirect()->back()->with('error', 'Judul dan Deskripsi wajib diisi.');
+        if (! $materi) {
+            return redirect()
+                ->back()
+                ->with('error', 'Materi tidak ditemukan atau Anda tidak memiliki akses.');
+        }
+
+        $rules = [
+            'judul' => [
+                'label' => 'Judul Materi',
+                'rules' => 'required|min_length[3]|max_length[150]',
+            ],
+            'deskripsi' => [
+                'label' => 'Deskripsi Materi',
+                'rules' => 'permit_empty|max_length[1000]',
+            ],
+            'file' => [
+                'label' => 'File Materi',
+                'rules' => 'permit_empty|max_size[file,10240]|ext_in[file,pdf,doc,docx,ppt,pptx,xls,xlsx]',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
         }
 
         $data = [
-            'judul' => $judul,
-            'deskripsi' => $deskripsi,
+            'judul'     => trim((string) $this->request->getPost('judul')),
+            'deskripsi' => trim((string) $this->request->getPost('deskripsi')),
         ];
 
         $file = $this->request->getFile('file');
-        if ($file && $file->isValid() && !$file->hasMoved()) {
-            $newName = $file->getRandomName();
-            $file->move('public/uploads/materi', $newName);
 
-            // Hapus file lama jika ada
-            if (!empty($materiLama['file'])) {
-                @unlink('public/uploads/materi' . $materiLama['file']);
+        if ($file && $file->isValid() && ! $file->hasMoved()) {
+            $this->ensureUploadDirectory();
+
+            $newName = $file->getRandomName();
+            $file->move($this->materiUploadPath, $newName);
+
+            if (! empty($materi['file'])) {
+                $oldFilePath = $this->materiUploadPath . '/' . $materi['file'];
+
+                if (is_file($oldFilePath)) {
+                    unlink($oldFilePath);
+                }
             }
 
             $data['file'] = $newName;
         }
 
+        $materiModel = new MateriModel();
         $materiModel->update($id, $data);
 
         return redirect()
-            ->to('/materi/kelas/' . $materiLama['id_kelas'])
+            ->to('/materi/kelas/' . $materi['id_kelas'])
             ->with('success', 'Materi berhasil diperbarui.');
     }
 
     public function hapus($id)
     {
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
+
+        $materi = $this->getOwnedMateri((int) $id);
+
+        if (! $materi) {
+            return redirect()
+                ->back()
+                ->with('error', 'Materi tidak ditemukan atau Anda tidak memiliki akses.');
+        }
+
+        if (! empty($materi['file'])) {
+            $filePath = $this->materiUploadPath . '/' . $materi['file'];
+
+            if (is_file($filePath)) {
+                unlink($filePath);
+            }
+        }
+
         $materiModel = new MateriModel();
-        $materi = $materiModel->find($id);
-
-        if (!$materi) {
-            return redirect()->back()->with('error', 'Materi tidak ditemukan.');
-        }
-
-        if (!empty($materi['file'])) {
-            @unlink('public/uploads/materi' . $materi['file']);
-        }
-
         $materiModel->delete($id);
 
         return redirect()
@@ -102,35 +199,17 @@ class Materi extends BaseController
 
     public function download($filename)
     {
-        $filepath = WRITEPATH . '../public/uploads/materi' . $filename;
-
-        if (!file_exists($filepath)) {
-            throw \CodeIgniter\Exceptions\PageNotFoundException::forPageNotFound('File tidak ditemukan.');
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
         }
 
-        return $this->response->download($filepath, null);
-    }
+        $filename = basename($filename);
+        $filePath = $this->materiUploadPath . '/' . $filename;
 
-    public function simpanMateri()
-    {
-        $materiModel = new MateriModel();
-
-        $file = $this->request->getFile('file');
-        $fileName = null;
-
-        if ($file && $file->isValid() && !$file->hasMoved()) {
-            $fileName = $file->getRandomName();
-            $file->move('public/uploads/materi', $fileName);
+        if (! is_file($filePath)) {
+            throw PageNotFoundException::forPageNotFound('File tidak ditemukan.');
         }
 
-        $materiModel->save([
-            'id_kelas' => $this->request->getPost('id_kelas'),
-            'judul' => $this->request->getPost('judul'),
-            'deskripsi' => $this->request->getPost('deskripsi'),
-            'file' => $fileName
-        ]);
-
-        return redirect()->to('/kelas')->with('success', 'Materi berhasil ditambahkan.');
+        return $this->response->download($filePath, null);
     }
-
 }

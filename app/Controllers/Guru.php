@@ -2,73 +2,176 @@
 
 namespace App\Controllers;
 
+use App\Models\UserModel;
+use App\Models\KelasModel;
+
 class Guru extends BaseController
 {
-    public function dashboard()
+    private function ensureGuru()
     {
-        // Cek apakah sudah login dan role = guru
-        if (!session()->get('logged_in') || session()->get('role') != 'guru') {
-            return redirect()->to('/login')->with('error', 'Akses ditolak.');
+        if (! session()->get('logged_in') || session()->get('role') !== 'guru') {
+            return redirect()
+                ->to('/login')
+                ->with('error', 'Silakan login sebagai guru terlebih dahulu.');
         }
 
-        return view('guru/dashboard', ['kelas' => $kelas]);
+        return null;
+    }
+
+    public function dashboard()
+    {
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
+
+        return redirect()->to('/guru/kelas');
     }
 
     public function kelas()
     {
-        $kelasModel = new KelasModel();
-        $kelas = $kelasModel->where('id_user', session()->get('id'))->findAll();
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
 
-        return view('guru/kelas/index', ['kelas' => $kelas]);
+        $kelasModel = new KelasModel();
+
+        $kelas = $kelasModel
+            ->where('id_guru', session()->get('id'))
+            ->orderBy('id', 'DESC')
+            ->findAll();
+
+        return view('guru/kelas/index', [
+            'kelas' => $kelas,
+        ]);
     }
 
     public function simpanKelas()
     {
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
+
+        $rules = [
+            'nama_kelas' => [
+                'label' => 'Nama Kelas',
+                'rules' => 'required|min_length[3]|max_length[100]',
+            ],
+            'deskripsi' => [
+                'label' => 'Deskripsi',
+                'rules' => 'permit_empty|max_length[255]',
+            ],
+            'materi' => [
+                'label' => 'Materi',
+                'rules' => 'permit_empty|max_size[materi,2048]|ext_in[materi,pdf,doc,docx,ppt,pptx]',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
         $kelasModel = new KelasModel();
 
         $file = $this->request->getFile('materi');
         $namaFile = null;
 
-        if ($file && $file->isValid()) {
+        if ($file && $file->isValid() && ! $file->hasMoved()) {
             $namaFile = $file->getRandomName();
-            $file->move('public/uploads/materi', $namaFile);
+            $file->move(FCPATH . 'uploads/materi', $namaFile);
         }
 
         $kelasModel->insert([
-            'nama_kelas' => $this->request->getPost('nama_kelas'),
+            'nama_kelas' => trim((string) $this->request->getPost('nama_kelas')),
             'kode_kelas' => strtoupper(bin2hex(random_bytes(3))),
-            'deskripsi'  => $this->request->getPost('deskripsi'),
+            'deskripsi'  => trim((string) $this->request->getPost('deskripsi')),
             'materi'     => $namaFile,
-            'id_guru'    => session()->get('id')
+            'id_guru'    => session()->get('id'),
         ]);
 
-        return redirect()->to('/guru/kelas')->with('success', 'Kelas berhasil ditambahkan');
+        return redirect()
+            ->to('/guru/kelas')
+            ->with('success', 'Kelas berhasil ditambahkan.');
     }
 
-    // EDIT PROFIL GURU
     public function editProfil()
     {
-        $userModel = new \App\Models\UserModel();
-        $id = session()->get('id');
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
 
-        $guru = $userModel->find($id);
+        $userModel = new UserModel();
+        $idGuru = session()->get('id');
 
-        return view('/guru/kelas/edit_profil', ['guru' => $guru]);
+        $guru = $userModel->find($idGuru);
+
+        if (! $guru) {
+            return redirect()
+                ->to('/login')
+                ->with('error', 'Data guru tidak ditemukan.');
+        }
+
+        return view('guru/kelas/edit_profil', [
+            'guru' => $guru,
+        ]);
     }
 
     public function updateProfil()
     {
-        $userModel = new \App\Models\UserModel();
-        $id = session()->get('id');
+        if ($redirect = $this->ensureGuru()) {
+            return $redirect;
+        }
 
-        $data = [
-            'nama'     => $this->request->getPost('nama'),
-            'username' => $this->request->getPost('username'),
-            'password' => password_hash($this->request->getPost('password'), PASSWORD_DEFAULT),
+        $idGuru = session()->get('id');
+
+        $rules = [
+            'nama' => [
+                'label' => 'Nama Lengkap',
+                'rules' => 'required|min_length[3]|max_length[100]',
+            ],
+            'username' => [
+                'label' => 'Username',
+                'rules' => "required|min_length[3]|max_length[50]|alpha_numeric_punct|is_unique[users.username,id,{$idGuru}]",
+                'errors' => [
+                    'is_unique' => 'Username sudah digunakan. Silakan gunakan username lain.',
+                ],
+            ],
+            'password' => [
+                'label' => 'Password',
+                'rules' => 'permit_empty|min_length[6]',
+            ],
         ];
 
-        $userModel->update($id, $data);
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
 
-        return redirect()->to('/guru/kelas/index')->with('success', 'Profil berhasil diperbarui');
+        $userModel = new UserModel();
+
+        $data = [
+            'nama'     => trim((string) $this->request->getPost('nama')),
+            'username' => trim((string) $this->request->getPost('username')),
+        ];
+
+        $password = (string) $this->request->getPost('password');
+
+        if ($password !== '') {
+            $data['password'] = password_hash($password, PASSWORD_DEFAULT);
+        }
+
+        $userModel->update($idGuru, $data);
+
+        session()->set([
+            'nama' => $data['nama'],
+        ]);
+
+        return redirect()
+            ->to('/guru/kelas')
+            ->with('success', 'Profil berhasil diperbarui.');
     }
 }

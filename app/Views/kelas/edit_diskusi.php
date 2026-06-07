@@ -1,121 +1,153 @@
 <?php
-session();
-$nama = session()->get('nama');
-$email = session()->get('email');
+$nama = session()->get('nama') ?? 'Pengguna';
+
+$komentar = isset($komentar) && is_array($komentar)
+  ? $komentar
+  : [
+      'id'       => '',
+      'id_kelas' => '',
+      'pesan'    => '',
+    ];
 ?>
 
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Edit Komentar - SekulLegend</title>
-    <!-- Tailwind CSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Google -->
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Poppins', 'sans-serif'],
-                    },
-                    colors: {
-                        burlap: {
-                            50: '#f9f7f4',
-                            100: '#f3efe8',
-                            200: '#e6dfd1',
-                            300: '#d8caae',
-                            400: '#c7b28a',
-                            500: '#b79e6f',
-                            600: '#a58a5c',
-                            700: '#8a724d',
-                            800: '#735d42',
-                            900: '#5f4d38',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Edit Komentar - SekulLegend</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet"
+  >
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Poppins', 'sans-serif'],
+          },
+          colors: {
+            burlap: {
+              50: '#f9f7f4',
+              100: '#f3efe8',
+              200: '#e6dfd1',
+              300: '#d8caae',
+              400: '#c7b28a',
+              500: '#b79e6f',
+              600: '#a58a5c',
+              700: '#8a724d',
+              800: '#735d42',
+              900: '#5f4d38',
+            },
+          },
+        },
+      },
+    };
+  </script>
 </head>
-<body class="bg-burlap-50 font-sans min-h-screen">
-    <!-- Gradient Background -->
-    <div class="fixed inset-0 bg-gradient-to-br from-amber-50 to-stone-200 -z-10"></div>
 
-    <!-- Main Content -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <!-- Tombol kembali ke diskusi -->
-        <div class="mb-4 flex">
-            <a href="<?= base_url('/kelas/diskusi/' . $komentar['id_kelas']) ?>" class="inline-flex items-center text-burlap-600 hover:text-burlap-800 transition">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+<body class="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-stone-200 font-sans text-stone-800">
+  <main class="flex min-h-screen items-center justify-center px-4 py-8">
+    <section class="w-full max-w-3xl">
+
+      <!-- Back Button -->
+      <div class="mb-5">
+        <a
+          href="<?= base_url('/kelas/diskusi/' . ($komentar['id_kelas'] ?? '')) ?>"
+          class="inline-flex items-center gap-2 text-sm font-medium text-burlap-700 transition hover:text-burlap-900"
+        >
+          <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Kembali ke Diskusi
+        </a>
+      </div>
+
+      <!-- Card -->
+      <div class="overflow-hidden rounded-2xl border border-burlap-200 bg-white/90 shadow-xl backdrop-blur-sm">
+        <div class="border-b border-burlap-200 bg-burlap-50 px-6 py-5">
+          <h1 class="flex items-center gap-2 text-xl font-bold text-amber-700">
+            <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Edit Pesan
+          </h1>
+
+          <p class="mt-2 text-sm text-stone-500">
+            Perbarui pesan diskusi Anda. Perubahan akan langsung tampil setelah disimpan.
+          </p>
+        </div>
+
+        <div class="p-6">
+          <?php if (session()->getFlashdata('error')) : ?>
+            <div class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <?= esc(session()->getFlashdata('error')) ?>
+            </div>
+          <?php endif; ?>
+
+          <?php if (session()->getFlashdata('success')) : ?>
+            <div class="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+              <?= esc(session()->getFlashdata('success')) ?>
+            </div>
+          <?php endif; ?>
+
+          <form action="<?= base_url('/kelas/update-diskusi/' . ($komentar['id'] ?? '')) ?>" method="post" class="space-y-5">
+            <?= csrf_field() ?>
+
+            <div>
+              <label for="pesan" class="mb-2 block text-sm font-medium text-stone-700">
+                Pesan Diskusi
+              </label>
+
+              <textarea
+                name="pesan"
+                id="pesan"
+                rows="6"
+                required
+                placeholder="Tulis pesan diskusi..."
+                class="w-full rounded-lg border border-burlap-200 bg-burlap-50/50 px-4 py-3 text-sm text-stone-800 outline-none transition placeholder:text-stone-400 focus:border-burlap-500 focus:ring-2 focus:ring-burlap-200"
+              ><?= esc(old('pesan', $komentar['pesan'] ?? '')) ?></textarea>
+            </div>
+
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="submit"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 sm:w-auto"
+              >
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
-                Kembali ke Diskusi
-            </a>
-        </div>
-        
-        <!-- Form Edit Komentar -->
-        <div class="max-w-3xl mx-auto">
-            <div class="bg-white rounded-xl shadow-md overflow-hidden">
-                <div class="px-6 py-4 border-b border-burlap-200 bg-burlap-50">
-                    <h2 class="text-xl font-bold text-amber-700 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit Pesan
-                    </h2>
-                </div>
-                <div class="p-6">
-                    <form action="<?= base_url('/kelas/update-diskusi/' . $komentar['id']) ?>" method="post">
-                        <textarea 
-                            name="pesan" 
-                            rows="6" 
-                            class="w-full p-3 border border-burlap-200 rounded-md focus:ring-2 focus:ring-burlap-500 focus:border-burlap-500 bg-burlap-50/50"
-                            required
-                        ><?= esc($komentar['pesan']) ?></textarea>
-                        <div class="mt-4 flex items-center gap-3">
-                            <button 
-                                type="submit" 
-                                class="bg-green-400 text-white px-4 py-2 rounded-md hover:bg-green-600 transition shadow-sm flex items-center"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                                </svg>
-                                Simpan Perubahan
-                            </button>
-                            <a 
-                                href="<?= base_url('/kelas/diskusi/' . $komentar['id_kelas']) ?>" 
-                                class="text-red-600 hover:text-red-800 px-4 py-2 border border-red-300 rounded-md hover:bg-red-50 transition flex items-center"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                                Batal
-                            </a>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            
-            <div class="mt-6 text-center text-sm text-burlap-500">
-                <p>Perubahan akan langsung terlihat di forum diskusi setelah disimpan.</p>
-            </div>
-        </div>
-    </div>
+                Simpan Perubahan
+              </button>
 
-    <script>
-        function toggleDropdown() {
-            document.getElementById('userDropdown').classList.toggle('hidden');
-        }
-        
-        // Tutup dropdown jika klik di luar
-        window.addEventListener('click', function(e) {
-            if (!e.target.closest('button') && !document.getElementById('userDropdown').classList.contains('hidden')) {
-                document.getElementById('userDropdown').classList.add('hidden');
-            }
-        });
-    </script>
+              <a
+                href="<?= base_url('/kelas/diskusi/' . ($komentar['id_kelas'] ?? '')) ?>"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-300 px-5 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 sm:w-auto"
+              >
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Batal
+              </a>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <p class="mt-6 text-center text-sm text-stone-500">
+        &copy; 2023 SekulLegend. All rights reserved.
+      </p>
+    </section>
+  </main>
 </body>
 </html>

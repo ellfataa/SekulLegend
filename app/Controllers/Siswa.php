@@ -10,173 +10,365 @@ use App\Models\SiswaKelasModel;
 
 class Siswa extends BaseController
 {
+    private function ensureSiswa()
+    {
+        if (! session()->get('logged_in') || session()->get('role') !== 'siswa') {
+            return redirect()
+                ->to('/login')
+                ->with('error', 'Silakan login sebagai siswa terlebih dahulu.');
+        }
+
+        return null;
+    }
+
     public function index()
     {
-        $kelasModel = new KelasModel();
-        $data['kelas'] = $kelasModel->findAll();
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
+
+        $idUser = session()->get('id');
+
+        $siswaKelasModel = new SiswaKelasModel();
+
+        $data = [
+            'jumlahKelas' => $siswaKelasModel->countKelasBySiswa($idUser),
+        ];
+
         return view('siswa/dashboard', $data);
     }
 
     public function kelas()
     {
-        $id_user = session()->get('id');
-        $db = \Config\Database::connect();
-        $builder = $db->table('siswa_kelas');
-        $builder->select('kelas.*');
-        $builder->join('kelas', 'kelas.id = siswa_kelas.id_kelas');
-        $builder->where('siswa_kelas.id_user', $id_user);
-        $kelas = $builder->get()->getResultArray();
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
 
-        return view('siswa/kelas', ['kelas' => $kelas]);
+        $idUser = session()->get('id');
+
+        $siswaKelasModel = new SiswaKelasModel();
+
+        $data = [
+            'kelas' => $siswaKelasModel->getKelasBySiswa($idUser),
+        ];
+
+        return view('siswa/kelas', $data);
     }
 
     public function kelasDetail($id)
     {
-        $kelasModel = new KelasModel();
-        $materiModel = new MateriModel();
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
+
+        $idUser = session()->get('id');
+
+        $siswaKelasModel = new SiswaKelasModel();
+
+        if (! $siswaKelasModel->isSiswaJoined($idUser, $id)) {
+            return redirect()
+                ->to('/siswa/kelas')
+                ->with('error', 'Anda belum bergabung dengan kelas tersebut.');
+        }
+
+        $kelasModel   = new KelasModel();
+        $materiModel  = new MateriModel();
         $diskusiModel = new DiskusiModel();
-        $userModel = new UserModel();
+        $userModel    = new UserModel();
 
         $kelas = $kelasModel->find($id);
-        $materi = $materiModel->where('id_kelas', $id)->findAll();
-        $diskusi = $diskusiModel->where('id_kelas', $id)->orderBy('created_at', 'ASC')->findAll();
 
-        // Buat map id_user => nama
-        $userList = $userModel->findAll();
+        if (! $kelas) {
+            return redirect()
+                ->to('/siswa/kelas')
+                ->with('error', 'Kelas tidak ditemukan.');
+        }
+
+        $materi = $materiModel
+            ->where('id_kelas', $id)
+            ->findAll();
+
+        $diskusi = $diskusiModel
+            ->where('id_kelas', $id)
+            ->orderBy('created_at', 'ASC')
+            ->findAll();
+
         $userMap = [];
-        foreach ($userList as $user) {
+
+        foreach ($userModel->select('id, nama')->findAll() as $user) {
             $userMap[$user['id']] = $user['nama'];
         }
 
         return view('siswa/kelas_detail', [
-            'kelas' => $kelas,
-            'materi' => $materi,
+            'kelas'   => $kelas,
+            'materi'  => $materi,
             'diskusi' => $diskusi,
-            'userMap' => $userMap
+            'userMap' => $userMap,
         ]);
     }
 
-    public function kirimKomentar($id_kelas)
+    public function kirimKomentar($idKelas)
     {
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
+
+        $rules = [
+            'pesan' => [
+                'label' => 'Komentar',
+                'rules' => 'required|min_length[2]',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Komentar tidak boleh kosong.');
+        }
+
+        $idUser = session()->get('id');
+
+        $siswaKelasModel = new SiswaKelasModel();
+
+        if (! $siswaKelasModel->isSiswaJoined($idUser, $idKelas)) {
+            return redirect()
+                ->to('/siswa/kelas')
+                ->with('error', 'Anda belum bergabung dengan kelas tersebut.');
+        }
+
         $diskusiModel = new DiskusiModel();
+
         $diskusiModel->insert([
-            'id_user' => session()->get('id'),
-            'id_kelas' => $id_kelas,
-            'pesan' => $this->request->getPost('pesan'),
+            'id_user'    => $idUser,
+            'id_kelas'   => $idKelas,
+            'pesan'      => trim((string) $this->request->getPost('pesan')),
             'created_at' => date('Y-m-d H:i:s'),
         ]);
 
-        return redirect()->to('/siswa/kelas/' . $id_kelas);
+        return redirect()
+            ->to('/siswa/kelas/' . $idKelas)
+            ->with('success', 'Komentar berhasil dikirim.');
     }
 
     public function editDiskusi($id)
     {
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
+
         $diskusiModel = new DiskusiModel();
         $komentar = $diskusiModel->find($id);
 
-        if (!$komentar || $komentar['id_user'] != session()->get('id')) {
-            return redirect()->back()->with('error', 'Akses ditolak.');
+        if (! $komentar || (int) $komentar['id_user'] !== (int) session()->get('id')) {
+            return redirect()
+                ->back()
+                ->with('error', 'Akses ditolak.');
         }
 
-        return view('siswa/edit_diskusi', ['komentar' => $komentar]);
+        return view('siswa/edit_diskusi', [
+            'komentar' => $komentar,
+        ]);
     }
 
     public function updateDiskusi($id)
     {
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
+
+        $rules = [
+            'pesan' => [
+                'label' => 'Komentar',
+                'rules' => 'required|min_length[2]',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Komentar tidak boleh kosong.');
+        }
+
         $diskusiModel = new DiskusiModel();
         $komentar = $diskusiModel->find($id);
 
-        if (!$komentar || $komentar['id_user'] != session()->get('id')) {
-            return redirect()->back()->with('error', 'Akses ditolak.');
+        if (! $komentar || (int) $komentar['id_user'] !== (int) session()->get('id')) {
+            return redirect()
+                ->back()
+                ->with('error', 'Akses ditolak.');
         }
 
-        $pesan = $this->request->getPost('pesan');
-        $diskusiModel->update($id, ['pesan' => $pesan]);
+        $diskusiModel->update($id, [
+            'pesan' => trim((string) $this->request->getPost('pesan')),
+        ]);
 
-        return redirect()->to('/siswa/kelas/' . $komentar['id_kelas']);
+        return redirect()
+            ->to('/siswa/kelas/' . $komentar['id_kelas'])
+            ->with('success', 'Komentar berhasil diperbarui.');
     }
 
-
-    public function hapusDiskusi($id_kelas, $id_diskusi)
+    public function hapusDiskusi($idKelas, $idDiskusi)
     {
-        $diskusiModel = new DiskusiModel();
-        $komentar = $diskusiModel->find($id_diskusi);
-
-        if (!$komentar || $komentar['id_user'] != session()->get('id')) {
-            return redirect()->back()->with('error', 'Akses ditolak.');
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
         }
 
-        $diskusiModel->delete($id_diskusi);
+        $diskusiModel = new DiskusiModel();
+        $komentar = $diskusiModel->find($idDiskusi);
 
-        return redirect()->to('/siswa/kelas/' . $id_kelas);
+        if (! $komentar || (int) $komentar['id_user'] !== (int) session()->get('id')) {
+            return redirect()
+                ->back()
+                ->with('error', 'Akses ditolak.');
+        }
+
+        $diskusiModel->delete($idDiskusi);
+
+        return redirect()
+            ->to('/siswa/kelas/' . $idKelas)
+            ->with('success', 'Komentar berhasil dihapus.');
     }
 
     public function formKodeKelas()
     {
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
+
         return view('siswa/form_kode_kelas');
     }
 
     public function cekKodeKelas()
     {
-        $kode = $this->request->getPost('kode_kelas');
-        $id_user = session()->get('id');
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
+
+        $rules = [
+            'kode_kelas' => [
+                'label' => 'Kode Kelas',
+                'rules' => 'required',
+            ],
+        ];
+
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Kode kelas wajib diisi.');
+        }
+
+        $kodeKelas = trim((string) $this->request->getPost('kode_kelas'));
+        $idUser = session()->get('id');
 
         $kelasModel = new KelasModel();
         $siswaKelasModel = new SiswaKelasModel();
 
-        $kelas = $kelasModel->where('kode_kelas', $kode)->first();
-
-        if (!$kelas) {
-            return redirect()->back()->with('error', 'Kode kelas tidak ditemukan.');
-        }
-
-        // Cek apakah siswa sudah bergabung
-        $sudah = $siswaKelasModel
-            ->where('id_user', $id_user)
-            ->where('id_kelas', $kelas['id'])
+        $kelas = $kelasModel
+            ->where('kode_kelas', $kodeKelas)
             ->first();
 
-        if (!$sudah) {
-            $siswaKelasModel->insert([
-                'id_user' => $id_user,
-                'id_kelas' => $kelas['id']
-            ]);
+        if (! $kelas) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Kode kelas tidak ditemukan.');
         }
 
-        return redirect()->to('/siswa/kelas');
+        if ($siswaKelasModel->isSiswaJoined($idUser, $kelas['id'])) {
+            return redirect()
+                ->to('/siswa/kelas')
+                ->with('success', 'Anda sudah bergabung di kelas tersebut.');
+        }
+
+        $siswaKelasModel->insert([
+            'id_user'  => $idUser,
+            'id_kelas' => $kelas['id'],
+        ]);
+
+        return redirect()
+            ->to('/siswa/kelas')
+            ->with('success', 'Berhasil bergabung ke kelas.');
     }
 
-    // EDIT PROFIL
     public function editProfil()
     {
-        $userModel = new \App\Models\UserModel();
-        $id = session()->get('id');
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
 
-        $siswa = $userModel->find($id);
+        $userModel = new UserModel();
+        $idUser = session()->get('id');
 
-        return view('siswa/edit_profil', ['siswa' => $siswa]);
+        $siswa = $userModel->find($idUser);
+
+        if (! $siswa) {
+            return redirect()
+                ->to('/login')
+                ->with('error', 'Data pengguna tidak ditemukan.');
+        }
+
+        return view('siswa/edit_profil', [
+            'siswa' => $siswa,
+        ]);
     }
 
     public function updateProfil()
     {
-        $userModel = new \App\Models\UserModel();
-        $id = session()->get('id');
+        if ($redirect = $this->ensureSiswa()) {
+            return $redirect;
+        }
 
-        $data = [
-            'nama' => $this->request->getPost('nama'),
-            'username' => $this->request->getPost('username')
+        $idUser = session()->get('id');
+
+        $rules = [
+            'nama' => [
+                'label' => 'Nama Lengkap',
+                'rules' => 'required|min_length[3]|max_length[100]',
+            ],
+            'username' => [
+                'label' => 'Username',
+                'rules' => "required|min_length[3]|max_length[50]|alpha_numeric_punct|is_unique[users.username,id,{$idUser}]",
+                'errors' => [
+                    'is_unique' => 'Username sudah digunakan. Silakan gunakan username lain.',
+                ],
+            ],
+            'password' => [
+                'label' => 'Password',
+                'rules' => 'permit_empty|min_length[6]',
+            ],
         ];
 
-        // Jika password diisi, update juga
-        $password = $this->request->getPost('password');
-        if (!empty($password)) {
+        if (! $this->validate($rules)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', implode('<br>', $this->validator->getErrors()));
+        }
+
+        $userModel = new UserModel();
+
+        $data = [
+            'nama'     => trim((string) $this->request->getPost('nama')),
+            'username' => trim((string) $this->request->getPost('username')),
+        ];
+
+        $password = (string) $this->request->getPost('password');
+
+        if ($password !== '') {
             $data['password'] = password_hash($password, PASSWORD_DEFAULT);
         }
 
-        $userModel->update($id, $data);
+        $userModel->update($idUser, $data);
 
-        return redirect()->to('/siswa/dashboard')->with('success', 'Profil berhasil diperbarui!');
+        session()->set([
+            'nama' => $data['nama'],
+        ]);
+
+        return redirect()
+            ->to('/siswa/dashboard')
+            ->with('success', 'Profil berhasil diperbarui.');
     }
-
-
 }
